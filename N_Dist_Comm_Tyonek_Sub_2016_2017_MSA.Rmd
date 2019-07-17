@@ -1,0 +1,646 @@
+---
+title: "Northern District commercial and Tyonek Subsistence fisheries 2016 and 2017 mixed stock analysis"
+output: 
+  html_notebook:
+    toc: true
+    toc_depth: 3
+---
+
+This notebook documents the MSA of the Northern District commercial and Tyonek Subsistence fisheries 2016 and 2017 using the new GTSeq loci and [2019 UCI Chinook basline](V:/Analysis/2_Central/Chinook/Cook Inlet/2019/2019_UCI_Chinook_baseline_hap_data)
+## Set up workspace
+### Get functions and load tidy packages
+```{r workspace setup, echo=TRUE, eval=FALSE, message=FALSE}
+
+#save.image("V:/Analysis/2_Central/Chinook/Cook Inlet/2019/Mixture/N_Dist_Comm_Tyonek_Sub_2016_2017_MSA/N_Dist_Comm_Tyonek_Sub_2016_2017_MSA.RData")
+
+library("tidyverse")
+
+load("V:/Analysis/2_Central/Chinook/Cook Inlet/2019/Mixture/N_Dist_Comm_Tyonek_Sub_2016_2017_MSA/N_Dist_Comm_Tyonek_Sub_2016_2017_MSA.RData")
+
+source("C:\\Users\\awbarclay\\Documents\\R\\GitHubCloneFunctions.R")#GCL functions
+source("V:\\Analysis\\Staff\\Andy Barclay\\R\\New Functions\\WorkspaceFolders.GCL.R")#A function I wrote
+
+
+```
+### Create workspace folders 
+```{r create folders, echo=TRUE, message=FALSE, eval=FALSE}
+
+#WorkspaceFolders.GCL(Folders = c("output", "objects", "rubias", "GIS", "data"), Subfolders = list(rubias = c("baseline", "mixture", "output")),wd = getwd())
+
+```
+## Data Retrieval and Quality Control
+### Genotype data
+Retrieving genotypes from LOKI and importing them into R with the RJDBC package (Urbanek 2018). 
+```{r locus control, echo=TRUE, message=FALSE}
+
+CreateLocusControl.GCL(markersuite = "UCI_Chinook_414SNPs", username = "awbarclay", password = password)#Locus control
+
+loci <- LocusControl$locusnames %>% 
+  sort()
+
+sillyvec <- c("KNCIC16", "KTYSUB16", "KNCIC17", "KTYSUB17")
+
+LOKI2R.GCL(sillyvec = sillyvec, username = "awbarclay", password)#Pull Data from LOKI
+
+```
+### Initial sample sizes 
+Function to get sample sizes from *.gcl objects.
+```{r sample size function}
+
+SampSize<-function(sillyvec){
+  
+ as.character(sapply(paste(sillyvec,".gcl",sep = ''), function(x) get(x)$n))
+  
+}
+
+```
+
+Some of the sample sizes are big becuause all individuals were pulled from LOKI and some samples were not analyzed for the GTSeq panels.
+```{r initial N, echo=FALSE}
+
+samples <- tibble(collection = sillyvec,initial = SampSize(sillyvec))
+samples
+
+```
+### Remove individuals (80% rule)
+Idendify fish missing data at 20% or more of loci (Dann et al. 2009) and remove them. 
+```{r missing loci, echo = FALSE, }
+
+Missloci <- RemoveIndMissLoci.GCL(sillyvec=sillyvec, proportion = 0.8)
+
+```
+### Post missloci sample size
+Sample sizes after removing individuals with missing data
+```{r post missloci N, echo = FALSE}
+
+samples$missloci <- SampSize(sillyvec)
+samples
+
+```
+### Duplicate check
+Check for individuals within collections that have the same genotypes at 99% of loci (duplicate individuals)
+```{r duplicate check, echo = FALSE, include = FALSE}
+
+dupcheckNULLquantile <- CheckDupWithinSilly.GCL(sillyvec = sillyvec, loci = loci, quantile = NULL, minproportion = 0.99)#Quantile NULL min proportion 0.99  
+
+dupcheckNULLquantile %>% 
+  modify("report") %>%
+  keep(~is_tibble(.x)) %>% 
+  bind_rows(.id = "silly")
+
+```
+#### Remove duplicates
+Removed XX duplicate individuals
+```{r remove duplicates, echo = FALSE, message=FALSE}
+
+RemoveIDs.GCL(silly = "KNCIC16", IDs = c(689, 745, 657, 727, 754, 725))#Adam selected which ones to drop. I didn't drop 739 or 671 because they were very different sample numbers and they were sampled in different stat areas and very different dates.
+
+RemoveIDs.GCL(silly = "KNCIC17", IDs = 1039)
+
+```
+### Final sample sizes
+These are the sample sizes after removing duplicate and non-baseline individuals
+```{r post dup N, echo = FALSE}
+
+samples$AfterDup <- SampSize(sillyvec)
+samples
+
+write_excel_csv(samples, "output/Sample_Sizes.csv")
+
+```
+## Mixture setup
+### Create mixec
+```{r mixvec, echo=FALSE}
+
+mixvec <- c("GeneralS16TB", "GeneralS16Te",  "GeneralS16Tl", "GeneralN16e", "GeneralN16l", "Eastern16e", "Eastern16l", "Subsistence16e", "Subsistence16l", "GeneralS17", "GeneralN17", "Eastern17", "Subsistence17")
+
+mixvec
+
+```
+### Create mixture objects
+#### 2016 mixtures
+```{r General Subdistrict-south 2016, echo=FALSE, message=FALSE}
+
+require('xts')
+GeneralS16TB_IDs <- KNCIC16.gcl$attributes%>%
+  filter(CAPTURE_LOCATION %in% c("247-10")) %>% 
+  filter(CAPTURE_DATE%in%timeBasedSeq(x=c('20160529/20160630'), retclass = "POSIXct")) %>% 
+  select(.data$FK_FISH_ID)
+PoolCollections.GCL(collections = "KNCIC16", loci = loci, IDs = list(as.character(GeneralS16TB_IDs$FK_FISH_ID)), newname = "GeneralS16TB")
+
+GeneralS16Te_IDs <- KNCIC16.gcl$attributes%>%
+  filter(CAPTURE_LOCATION %in% c("247-20"))%>%
+  filter(CAPTURE_DATE%in%timeBasedSeq(x = c('20160529/20160612'), retclass = "POSIXct")) %>%
+  select(.data$FK_FISH_ID)
+PoolCollections.GCL(collections="KNCIC16", loci = loci, IDs = list(as.character(GeneralS16Te_IDs$FK_FISH_ID)), newname = "GeneralS16Te")
+
+GeneralS16Tl_IDs<-KNCIC16.gcl$attributes%>%
+  filter(CAPTURE_LOCATION%in%c("247-20"))%>%
+  filter(CAPTURE_DATE%in%timeBasedSeq(x=c('20160613/20160630'), retclass = "POSIXct")) %>%
+  select(.data$FK_FISH_ID)
+PoolCollections.GCL(collections = "KNCIC16", loci = loci, IDs = list(as.character(GeneralS16Tl_IDs$FK_FISH_ID)), newname="GeneralS16Tl")
+
+
+```
+```{r General Subdistrict-north 2016, echo=FALSE}
+
+GeneralN16e_IDs <- KNCIC16.gcl$attributes %>%
+  filter(CAPTURE_LOCATION %in% c("247-41", "247-42", "247-43")) %>%
+  filter(CAPTURE_DATE %in% timeBasedSeq(x=c('20160529/20160612'), retclass = "POSIXct")) %>%
+  select(.data$FK_FISH_ID)
+PoolCollections.GCL(collections = "KNCIC16", loci = loci, IDs = list(as.character(GeneralN16e_IDs$FK_FISH_ID)), newname = "GeneralN16e")
+
+GeneralN16l_IDs <- KNCIC16.gcl$attributes %>%
+  filter(CAPTURE_LOCATION %in% c("247-41","247-42","247-43")) %>%
+  filter(CAPTURE_DATE %in% timeBasedSeq(x = c('20160613/20160627'), retclass = "POSIXct")) %>%
+  select(.data$FK_FISH_ID)
+PoolCollections.GCL(collections="KNCIC16", loci = loci, IDs = list(as.character(GeneralN16l_IDs$FK_FISH_ID)), newname = "GeneralN16l")
+
+```
+```{r Eastern Subdistrict 2016, echo=FALSE}
+
+Eastern16e_IDs <- KNCIC16.gcl$attributes %>%
+  filter(CAPTURE_LOCATION %in% c("247-70", "247-80", "247-90", "247-70_80")) %>%
+  filter(CAPTURE_DATE %in% timeBasedSeq(x = c('20160529/20160612'), retclass = "POSIXct")) %>% 
+  select(.data$FK_FISH_ID)
+PoolCollections.GCL(collections = "KNCIC16", loci = loci, IDs = list(as.character(Eastern16e_IDs$FK_FISH_ID)), newname = "Eastern16e")
+
+Eastern16l_IDs <- KNCIC16.gcl$attributes %>%
+  filter(CAPTURE_LOCATION %in% c("247-70", "247-80", "247-90", "247-70_80")) %>%
+  filter(CAPTURE_DATE %in% timeBasedSeq(x = c('20160613/20160630'), retclass = "POSIXct")) %>%
+  select(.data$FK_FISH_ID)
+PoolCollections.GCL(collections = "KNCIC16", loci = loci, IDs = list(as.character(Eastern16l_IDs$FK_FISH_ID)), newname = "Eastern16l")
+
+```
+```{r Tyonek Subsistence 2016, echo=FALSE}
+
+Subsistence16e_IDs <- KTYSUB16.gcl$attributes %>%
+  filter(CAPTURE_DATE %in% timeBasedSeq(x = c('20160516/20160531'), retclass = "POSIXct")) %>%
+  select(.data$FK_FISH_ID)
+PoolCollections.GCL(collections = "KTYSUB16", loci = loci, IDs = list(as.character(Subsistence16e_IDs$FK_FISH_ID)), newname = "Subsistence16e")
+
+Subsistence16l_IDs <- KTYSUB16.gcl$attributes %>%
+  filter(CAPTURE_DATE %in% timeBasedSeq(x = c('20160601/20160625'), retclass = "POSIXct")) %>%
+  select(.data$FK_FISH_ID)
+PoolCollections.GCL(collections = "KTYSUB16", loci = loci, IDs = list(as.character(Subsistence16l_IDs$FK_FISH_ID)), newname = "Subsistence16l")
+
+```
+#### 2017 mixtures
+For 2017 we genotyped secondary samples to replace any of the primary samples that didn't pass the 80% rule 
+```{r 2017 attributes, echo=FALSE}
+
+KNCIC17attr <- KNCIC17.gcl$attributes
+
+write_excel_csv(x = KNCIC17attr, path = "Output/KNCIC17attributes.csv")
+
+```
+```{r 2017 selection, echo=FALSE}
+
+selection17 <- read_csv("data/KNCIC17_selection.csv") %>%
+  select(FK_FISH_ID, selected, date, stat_area) 
+
+samps_missing <- selection17 %>% 
+  full_join(KNCIC17attr, by = "FK_FISH_ID") %>% 
+  filter(!(selected==2&is.na(COLLECTION_ID))) %>% 
+  unite(date_stat, date, stat_area, sep = "_") %>% 
+  nest(-date_stat, - selected) %>% 
+  mutate(Missing = map_dbl(data, ~is.na(.x$COLLECTION_ID) %>% sum()))
+
+samps_missing
+
+```
+These are the number of samples needed from stat areas and dates when extra fish were selected
+```{r samples needed}
+
+extras <- samps_missing %>% 
+  unnest() %>% 
+  filter(selected==2)
+
+samps_need <- samps_missing %>% 
+  filter(Missing > 0, date_stat%in%extras$date_stat) %>% 
+  select(date_stat, need = Missing)
+
+samps_need
+
+```
+Replacement FK_FISH_IDs by date and stat area
+```{r select replacement fish}
+
+repl_fish <- sapply(samps_need$date_stat, function(d_s) {
+  
+  need <- samps_need %>% 
+    filter(date_stat==d_s) %>% 
+    pull(need)
+  
+  extra <- extras %>% 
+    filter(date_stat==d_s) %>% 
+    pull(FK_FISH_ID)
+  
+  if(need < length(extra)){sel <- sample(extra, need)}else(sel <- extra)
+
+  sel
+  
+}) 
+
+repl_fish
+
+```
+Creating new attributes table of the fish to use in the analysis
+```{r fish to analyze, echo=FALSE}
+
+fish_analyze <- samps_missing %>% 
+  unnest() %>% 
+  filter(selected==1 & !is.na(COLLECTION_ID)) %>% 
+  pull(FK_FISH_ID) %>% 
+  c(repl_fish %>% 
+      unlist() %>% 
+      as.numeric()) %>% 
+  sort()
+
+KNCIC17attr_sel <- KNCIC17attr %>% 
+  filter(FK_FISH_ID %in% fish_analyze)
+
+KNCIC17attr_sel
+
+```
+```{r General Subdistrict-south 2017, echo=FALSE}
+
+GeneralS17_IDs <- KNCIC17attr_sel %>%
+  filter(CAPTURE_LOCATION %in% c("247-10","247-20")) %>% 
+  select(.data$FK_FISH_ID)
+PoolCollections.GCL(collections = "KNCIC17", loci = loci, IDs = list(as.character(GeneralS17_IDs$FK_FISH_ID)), newname = "GeneralS17")
+
+```
+```{r General Subdistrict-north 2017, echo=FALSE}
+
+GeneralN17_IDs <- KNCIC17attr_sel %>% 
+  filter(CAPTURE_LOCATION %in% c("247-41","247-42","247-43")) %>%
+  select(.data$FK_FISH_ID)
+PoolCollections.GCL(collections = "KNCIC17", loci = loci, IDs = list(as.character(GeneralN17_IDs$FK_FISH_ID)), newname = "GeneralN17")
+
+```
+```{r Eastern Subdistrict 2017, echo=FALSE}
+
+Eastern17_IDs<-KNCIC17attr_sel %>%
+  filter(CAPTURE_LOCATION %in% c("247-70","247-80","247-90")) %>%
+  select(.data$FK_FISH_ID)
+PoolCollections.GCL(collections = "KNCIC17", loci = loci, IDs = list(as.character(Eastern17_IDs$FK_FISH_ID)), newname = "Eastern17")
+
+```
+```{r Tyonek Subsistence 2017, echo=FSLSE}
+
+PoolCollections.GCL(collections = "KTYSUB17", loci = loci, IDs = NULL, newname="Subsistence17")
+
+```
+
+### Mixture sample sizes
+```{r mixture samples sizes, echo=FALSE}
+
+lapply(mixvec, function(mix){get(paste0(mix, ".gcl"))$n}) %>% 
+  set_names(mixvec) %>% 
+  bind_cols() %>% 
+  t()#Checking mixture sample sizes
+
+
+```
+
+## Rubias
+### Create mixture
+```{r rubias mixture object, echo=FALSE}
+
+mixture <- create_rubias_mixture(sillyvec = mixvec, loci = loci)
+
+```
+
+### Create baseline
+```{r rubias baseline object, echo=FALSE, eval=FALSE}
+
+attach("V:/Analysis/2_Central/Chinook/Cook Inlet/2019/2019_UCI_Chinook_baseline_hap_data/2019_UCI_Chinook_baseline_hap_data.RData")
+
+base_sillyvec <- sillyvec67
+
+groups <- c("West", "Susitna", "Deshka", "Yentna", "KnikTurnagain", "KenaiPen")
+
+groupvec <- c(rep(1,7), rep(2,23), 3, rep(4,7), rep(5,10), rep(6,19))
+
+grcol <- setNames(c("blue", "green", "yellow", "red", "orange", "cyan"), groups)
+
+baseline <- create_rubias_baseline(sillyvec = base_sillyvec, loci = loci, group_names = groups, groupvec = groupvec, path = "rubias/baseline", baseline_name = "CI_Chinook_67pops_414loci")
+
+detach()#Detach from baseline
+
+```
+
+### Run mixtures
+```{r run rubias mixture, echo=FALSE, message=FALSE}
+
+pi_prior <- tibble(collection = base_sillyvec, pi_param = Prior.GCL(groupvec = groupvec, groupweights = rep(1/max(groupvec), max(groupvec)))) 
+
+pi_init <- tibble(collection = base_sillyvec, pi_init = RandomInits.GCL(groupvec = groupvec, groupweights = rep(1/max(groupvec), max(groupvec)), nchains = 1)[, 1])
+
+mix.out <- run_rubias_mixture(reference = baseline, mixture = mixture, group_names = groups, gen_start_col = 5, method = "PB", alle_freq_prior = list(const_scaled = 1), pi_prior = pi_prior, pi_init = pi_init, reps = 25000, burn_in = 5000, pb_iter = 100, prelim_reps = NULL, prelim_burn_in = NULL, sample_int_Pi = 10, sample_theta = TRUE, pi_prior_sum = 1, path = "rubias/output", seed = 56)
+
+```
+### Results summary
+#### Results by mixture
+```{r results summary, echo=FALSE}
+
+results_sum <- custom_combine_rubias_output(rubias_output = NULL, mixvec = mixvec, group_names = groups, group_names_new = NULL, groupvec = NULL, groupvec_new = NULL, path = "rubias/output", alpha = 0.1, burn_in = 5000, bias_corr = TRUE, threshold = 5e-7, plot_trace = TRUE) 
+
+```
+#### Stratified mixture results
+```{r stratified results summary, echo=FALSE}
+
+harvest <- read_csv(file = "data/NDistHarvestNumbers.csv")
+
+results_stratified_sum_cv <- lapply(unique(harvest$Stratum), function(strat){
+  
+  catchvec = harvest %>% 
+    filter(Stratum==strat) %>% 
+    pull(mix_harvest)
+  
+  mixvec_new = harvest %>% 
+    filter(Stratum==strat) %>% 
+    pull(mixture_collection)
+  
+  cv = harvest %>% 
+    filter(Stratum==strat) %>% 
+    pull(CV)
+  
+  stratified_estimator_rubias(rubias_output = NULL, mixvec = mixvec_new, group_names = groups, catchvec = catchvec, newname = strat, group_names_new = NULL, groupvec = NULL, groupvec_new = NULL, path = "rubias/output", alpha = 0.1, burn_in = 5000, bias_corr = TRUE, threshold = 5e-7, cv = cv)
+
+}) %>% 
+  bind_rows()
+
+stratified_estimates <- harvest %>% 
+  group_by(Year, Fishery, Stratum) %>% 
+  summarize(stratum_harvest = sum(mix_harvest)) %>% 
+  ungroup() %>% 
+  right_join(results_stratified_sum_cv, by = c("Stratum" = "stratified_mixture")) %>% 
+  mutate(mean_h = mean*stratum_harvest, sd_h = sd*stratum_harvest, median_h = median*stratum_harvest, `5%_h` = `5%`*stratum_harvest, `95%_h` = `95%`*stratum_harvest, Fishery = factor(Fishery, levels = unique(Fishery)))
+
+write_excel_csv(stratified_estimates,path = "output/stratified_estimates.csv")
+
+```
+```{r commercial plots by area}
+fishery_names <- c(General_Subdistrict_south = "General Subdistrict (south)", General_Subdistrict_north = "General Subdistrict (north)", Eastern_Subdistrict = "Eastern Subdistrict", Tyonek_Subsistence = "Tyonek Subsistence")
+
+  stratified_estimates %>%
+    filter(Stratum %in% c("GeneralS16", "GeneralN16", "Eastern16", "GeneralS17", "GeneralN17", "Eastern17")) %>% 
+    ggplot(aes(x=repunit, y = mean_h, fill = repunit)) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          strip.text.x = element_text(size=14), 
+          strip.text.y = element_text(size=14), 
+          axis.title.x = element_text(size=13),
+          axis.title.y = element_text(size=13),
+          legend.position = "none")+
+    geom_bar(stat = "identity", position = "dodge") +
+    geom_errorbar(aes(ymin = `5%_h`, ymax = `95%_h`, width = 0.3), position = "dodge")+
+    scale_fill_manual(name = "Reporting Group", values = grcol) +
+    scale_y_continuous(limits = c(0, 600))+
+    scale_x_discrete(labels = c("West", "Susitna", "Deshka", "Yentna", "Knik-Turnagain", "Kenai Peninsula"))+
+    facet_grid(Year~Fishery, labeller = labeller(Year = 2016:2017, Fishery = fishery_names)) +
+    ylab("Harvest (90% CI)")+
+    xlab("Reporting Group")
+  
+ggsave(filename = "output/NCICommercalHarvestPlotsByArea2016_2017.jpg",device="jpeg",units="in",width=9,height=6,family="serif") 
+```
+#### Stratified annual results
+```{r annual results summary, echo=FALSE}
+
+results_annual_sum_cv <- lapply(unique(harvest$Annual_Stratum), function(strat){
+  
+  catchvec = harvest %>% 
+    filter(Annual_Stratum==strat) %>% 
+    pull(mix_harvest)
+  
+  mixvec_new = harvest %>% 
+    filter(Annual_Stratum==strat) %>% 
+    pull(mixture_collection)
+  
+  cv = harvest %>% 
+    filter(Annual_Stratum==strat) %>% 
+    pull(CV)
+  
+  stratified_estimator_rubias(rubias_output = NULL, mixvec = mixvec_new, group_names = groups, catchvec = catchvec, newname = strat, group_names_new = NULL, groupvec = NULL, groupvec_new = NULL, path = "rubias/output", alpha = 0.1, burn_in = 5000, bias_corr = TRUE, threshold = 5e-7, cv = cv)
+
+}) %>% 
+  bind_rows()
+
+annual_estimates <- harvest %>% 
+  group_by(Year, Annual_Stratum) %>%
+  summarize(stratum_harvest = sum(mix_harvest)) %>% 
+  right_join(results_annual_sum_cv, by = c("Annual_Stratum" = "stratified_mixture")) %>% 
+  mutate(mean_h = mean*stratum_harvest, sd_h = sd*stratum_harvest, median_h = median*stratum_harvest, `5%_h` = `5%`*stratum_harvest, `95%_h` = `95%`*stratum_harvest)
+
+write_excel_csv(annual_estimates,path = "output/annual_estimates.csv")
+
+```
+
+```{r annual plots commercial, echo=FALSE}
+
+  annual_estimates%>%
+    filter(Annual_Stratum %in% c("Northern_District_2016", "Northern_District_2017")) %>% 
+    ggplot(aes(x=repunit, y = mean_h, fill =repunit)) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          strip.text.x=element_text(size=14), 
+          strip.text.y=element_text(size=14), 
+          axis.title.x=element_text(size=13),
+          axis.title.y=element_text(size=13),
+          legend.position="none")+
+    geom_bar(stat="identity",position = "dodge") +
+    geom_errorbar(aes(ymin = `5%_h`, ymax = `95%_h`, width = 0.3), position = "dodge")+
+    scale_fill_manual(name = "Reporting Group", values = grcol) +
+    scale_y_continuous(limits = c(0, 800))+
+    scale_x_discrete(labels = c("West", "Susitna", "Deshka", "Yentna", "Knik-Turnagain", "Kenai Peninsula"))+
+    facet_grid(~Year, labeller = labeller(Year = 2016:2017)) +
+    ylab("Harvest (90% CI)")+
+    xlab("Reporting Group")
+  
+ggsave(filename = "output/NCICommercalHarvestAnnualPlots2016_2017.jpg",device="jpeg",units="in",width=6,height=6,family="serif") 
+```
+```{r annual plots subsistance, echo=FALSE}
+
+  annual_estimates%>%
+    filter(Annual_Stratum %in% c("Subsistence_2016", "Subsistence_2017")) %>% 
+    ggplot(aes(x=repunit, y = mean_h, fill =repunit)) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          strip.text.x=element_text(size=14), 
+          strip.text.y=element_text(size=14), 
+          axis.title.x=element_text(size=13),
+          axis.title.y=element_text(size=13),
+          legend.position="none")+
+    geom_bar(stat="identity",position = "dodge") +
+    geom_errorbar(aes(ymin = `5%_h`, ymax = `95%_h`, width = 0.3), position = "dodge")+
+    scale_fill_manual(name = "Reporting Group", values = grcol) +
+    scale_y_continuous(limits = c(0, 600))+
+    scale_x_discrete(labels = c("West", "Susitna", "Deshka", "Yentna", "Knik-Turnagain", "Kenai Peninsula"))+
+    facet_grid(~Year, labeller = labeller(Year = 2016:2017)) +
+    ylab("Harvest (90% CI)")+
+    xlab("Reporting Group")
+  
+ggsave(filename = "output/TyonekSubsistenceHarvestAnnualPlots2016_2017.jpg",device="jpeg",units="in",width=6,height=6,family="serif") 
+```
+### Table results
+#### Commercial by area
+```{r Commerical tables by area}
+
+stratified_estimates %>% 
+  filter(Fishery %in% c("General_Subdistrict_south", "General_Subdistrict_north", "Eastern_Subdistrict")) %>% 
+  mutate(blank = NA) %>% 
+  select(Stratum, repunit, mean, `5%`, `95%`, sd, blank, mean_h, `5%_h`, `95%_h`)%>% 
+  mutate(mean = mean*100,`5%` = `5%`*100, `95%` = `95%`*100, sd = sd*100) %>% 
+  write_excel_csv(path = "output/CommercialByAreaEstimates.csv")
+
+```
+#### Annual Commercial
+```{r Commerical tables by year}
+
+annual_estimates %>% 
+  filter(Annual_Stratum %in% c("Northern_District_2016", "Northern_District_2017")) %>% 
+  mutate(blank = NA) %>% 
+  select(Year, repunit, mean, `5%`, `95%`, sd, blank, mean_h, `5%_h`, `95%_h`)%>% 
+  mutate(mean = mean*100,`5%` = `5%`*100, `95%` = `95%`*100, sd = sd*100) %>% 
+  write_excel_csv(path = "output/CommercialAnnualEstimates.csv")
+
+```
+#### Annual Subsistence
+```{r Subsistence tables by year}
+
+annual_estimates %>% 
+  filter(Annual_Stratum %in% c("Subsistence_2016", "Subsistence_2017")) %>% 
+  mutate(blank = NA) %>% 
+  select(Year, repunit, mean, `5%`, `95%`, sd, blank, mean_h, `5%_h`, `95%_h`)%>% 
+  mutate(mean = mean*100,`5%` = `5%`*100, `95%` = `95%`*100, sd = sd*100) %>% 
+  write_excel_csv(path = "output/SubsistenceAnnualEstimates.csv")
+
+```
+## Proof tests
+These analyses were run on the genetic domain server 'genproc1' and their scripts are located [here]("V:\Analysis\2_Central\Chinook\Cook Inlet\2019\2019_UCI_Chinook_baseline_hap_data\rubias\proof tests")
+```{r proof tests results, echo=FALSE, eval=FALSE}
+
+MixN <- c(190)
+
+folder <- paste0("rubias/prooftests/","NCIgroups/", MixN, "samples/output")
+
+files <- list.files(folder, pattern="_bias_corr.csv")
+  
+mixvec <- str_split_fixed(string = files, pattern = "_bias_corr.csv", n=2)[,1]
+  
+  #results.mcmc <- custom_combine_rubias_output(rubias_output = NULL, mixvec = mixvec, group_names = groups, group_names_new = NULL, groupvec = NULL, groupvec_new = NULL, path = folder, alpha = 0.1, burn_in = 5000, bias_corr = FALSE, threshold = 5e-7, plot_trace = FALSE) %>% 
+    mutate(method="mcmc")
+  
+ #results.pb <- custom_combine_rubias_output(rubias_output = NULL, mixvec = mixvec, group_names = groups, group_names_new = NULL, groupvec = NULL, groupvec_new = NULL, path = folder, alpha = 0.1, burn_in = 5000, bias_corr = TRUE, threshold = 5e-7, plot_trace = FALSE) %>% 
+    mutate(method="pb")
+  
+#PTresults <- bind_rows(results.pb, results.mcmc)
+  
+#write_excel_csv(PTresults, path = "output/prooftestresults.csv")
+                
+PTresults <- read_csv(file = paste0(folder, "/ProofTestResults", length(groups), "groups_", MixN, "samples.csv")) %>% 
+  mutate(repunit = factor(repunit, levels=groups))
+
+PTresults
+```
+
+```{r prooftest results for plot, echo=FALSE, eval=FALSE}
+#Join the results output with the scenario values in a single data frame
+  
+samplesize_df <- dget(paste0(folder, "/samplesizemat_NCIgroups_190samples.txt")) %>% 
+  as_tibble() %>% 
+  mutate(repunit = factor(groups, levels = groups)) %>% 
+  gather(key = "scenario", value = "n", -repunit) %>% 
+  group_by(scenario) %>% 
+  mutate(actual_mix_n = sum(n), selected_mix_n = MixN) %>% 
+  mutate(true_pi = n/actual_mix_n, test_group = str_split_fixed(string=scenario, pattern = "_", n = 2)[,1]) 
+
+out.rubias_true <- PTresults %>% 
+  mutate( scenario = str_sub(mixture_collection, 1, str_length(mixture_collection)-2)) %>% 
+  separate(mixture_collection, into = c("test_group", "trash"), sep = "_") %>% 
+  select(-trash) %>% 
+  left_join(samplesize_df, by = c("repunit" = "repunit", "scenario" = "scenario", "test_group"="test_group")) 
+
+tmp <- out.rubias_true %>% 
+  mutate(true_repprop = true_pi,lo5CI=`5%`, hi95CI=`95%`) %>% 
+  select(-true_pi)
+
+STATS<-setNames(
+  lapply(c(1,0,.25,.50,.75),function(p){
+    s<-p; if(p==1){e<-p;s<-p-1}else(e<-p+.25)
+    tmp %>% 
+      filter(test_group==repunit,true_repprop%in%true_repprop>=s&true_repprop<=e)%>% 
+      group_by(method,test_group,selected_mix_n)%>%
+      mutate(Bias=mean-true_repprop,Abs_Bias=abs(mean-true_repprop),Bias_squared=(mean-true_repprop)^2,CI_width=hi95CI-lo5CI,
+             lo5CI_within=true_repprop-lo5CI,hi95CI_within=hi95CI-true_repprop,CI_contain_true=true_repprop>=lo5CI&true_repprop<=hi95CI)%>%
+      
+      summarise(RMSE=sqrt(mean(Bias_squared)),Bias=mean(Bias),percent_within=sum(Abs_Bias<=0.10)/length(Abs_Bias),Ninety_Within=quantile(Abs_Bias,.9),percent_CI_contain_true=sum(CI_contain_true)/length(repunit),
+                CI_range=paste0(round(range(CI_width)[1],3),"-",round(range(CI_width)[2],3)),Max_CI_Width=max(CI_width),Mean_CI_Width=mean(CI_width),Plus_Minus_True=paste0("+",round(max(hi95CI_within),3)," -",round(max(lo5CI_within),3))) %>% 
+      mutate(repunit=factor(test_group,levels=groups))
+  
+  }),c("Stats Overall","Stats 0.00 to 0.25","Stats 0.25 to 0.50","Stats 0.50 to 0.75","Stats 0.75 to 1.00"))
+
+````  
+The criteria for a sussessful reporting group: absolute bias < 5 and point estmates need to be at least within +/-10% of true proportion 90% of the time. All groups but Knik and Turnagain met these criteria. Run these same tests with 380 samples and see how they look.  
+```{r plot, eval=FALSE, echo=FALSE, fig.height=8, fig.width=11}
+
+groupnames <- c(West = "West", Susitna = "Susitna", Deshka = "Deshka", Yentna = "Yentna", KnikTurnagain = "Knik-Turnagain", KenaiPen = "Kenai Peninsula")
+ 
+# Plot all scenarios for each group on separate plots
+
+stats_df <- STATS$`Stats Overall`
+
+pdf(paste0(folder,"/ProofTests_100scenarios_NCIgroups_",MixN,"samples.pdf"), height = 9, width=13)   
+
+sapply(c("mcmc", "pb"), function(meth){
+  
+    print(tmp%>%
+      left_join(y = stats_df, by = c("method", "repunit", "test_group")) %>% 
+      filter(method==meth, test_group==repunit) %>% 
+      ggplot(aes(x = true_repprop, y = mean, colour = repunit)) +
+      geom_point() +
+      geom_linerange(aes(ymin = lo5CI, ymax = hi95CI))+
+      geom_abline(intercept = 0, slope = 1) +
+      geom_abline(aes(intercept = Ninety_Within, slope = 1), lty = 2) +
+      geom_abline(aes(intercept = -Ninety_Within, slope = 1),lty = 2) +
+      scale_colour_manual(name = "Reporting Group", values = grcol) +
+      geom_text(aes(x = .3, y = 1, label = paste0("RMSE:", round(RMSE, digits = 3))), color = "black", size = 2)+ 
+      geom_text(aes(x = .3, y = .94, label = paste0("Bias:", round(Bias, digits = 3))), color="black", size = 2)+
+      geom_text(aes(x = .3, y = .88, label = paste0("Within ", round(100*Ninety_Within, 1), "% of true 90% of time")), color = "black", size = 2)+
+      geom_text(aes(x = .3, y = .82, label = paste0("CI contain true:", round(percent_CI_contain_true, digits = 3))), color = "black", size = 2)+
+      facet_wrap(~ repunit, labeller = as_labeller(groupnames)) +
+      theme(legend.position = "none", strip.text.x = element_text(size = 18), panel.spacing.y = unit(3, "lines"))+
+      xlab("True Proportion") +
+      ylab("Posterior Mean Reporting Group Proportion") +
+      ggtitle(paste0("Scenario Tests (414 loci): ", meth), subtitle = paste0(MixN, " sample mixtures")) 
+        
+    )
+  
+}) 
+
+dev.off()
+  
+
+par(family = "serif")
+meth="pb"
+tmp%>%
+      left_join(y = stats_df, by = c("method", "repunit", "test_group")) %>% 
+      filter(method==meth, test_group==repunit) %>% 
+      ggplot(aes(x = true_repprop, y = mean, colour = repunit)) +
+      geom_point() +
+      geom_linerange(aes(ymin = lo5CI, ymax = hi95CI))+
+      geom_abline(intercept = 0, slope = 1) +
+      geom_abline(aes(intercept = Ninety_Within, slope = 1), lty = 2) +
+      geom_abline(aes(intercept = -Ninety_Within, slope = 1),lty = 2) +
+      scale_colour_manual(name = "Reporting Group", values = grcol) +
+      geom_text(aes(x = .3, y = 1, label = paste0("RMSE: ", round(RMSE, digits = 3))), color = "black", size = 2.5)+ 
+      geom_text(aes(x = .3, y = .94, label = paste0("Bias: ", round(Bias, digits = 3))), color="black", size = 2.5)+
+      geom_text(aes(x = .3, y = .88, label = paste0("Within ", round(100*Ninety_Within, 1), "% of true 90% of time")), color = "black", size = 2.5)+
+      geom_text(aes(x = .3, y = .82, label = paste0("CI contain true: ", round(percent_CI_contain_true, digits = 3))), color = "black", size = 2.5)+
+      facet_wrap(~ repunit, labeller = as_labeller(groupnames)) +
+      theme(legend.position = "none", strip.text.x = element_text(size = 18), panel.spacing.y = unit(1, "lines"), text = element_text(family = "serif"), axis.title = element_text(size = 15))+
+      xlab("True Proportion") +
+      ylab("Estimated Proportion") 
+#Save copy for the report
+  ggsave(filename = "V:/Documents/2_Central/Chinook/Cook Inlet/NCI Chinook harvest/2016 and 2017/ProofTestsNCIgroups414loci_pb.jpg", device = "jpeg", height = 6, width=9) 
+
+```
